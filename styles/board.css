@@ -1,0 +1,30 @@
+#board-wrap.flash-wrong {
+  box-shadow: 0 0 0 4px rgba(255, 0, 80, 0.45);
+  border-radius: 6px;
+}
+#board-wrap.flash-anim {
+  animation: flashWrong 420ms ease-out 1;
+}
+@keyframes flashWrong {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 0, 80, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 4px rgba(255, 0, 80, 0);
+  }
+}
+
+#anno defs marker#arrowhead path {
+  fill: rgba(25, 118, 210, 0.95);
+}
+#anno line.hint {
+  stroke: rgba(25, 118, 210, 0.95);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+#anno rect.hint-from {
+  fill: rgba(25, 118, 210, 0.18);
+}
+#anno rect.hint-to {
+  fill: rgba(25, 118, 210, 0.28);
+}

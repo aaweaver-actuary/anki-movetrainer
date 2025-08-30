@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>anki-movetrainer playground</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../dist/anki-mt.css" />
+    <link rel="stylesheet" href="../anki-media/_chessboard-1.0.0.css" />
+    <style>
+      #mt-root {
+        width: 340px;
+        margin: 16px auto;
+      }
+      #board-wrap {
+        position: relative;
+        width: 340px;
+        height: 340px;
+      }
+      #board {
+        width: 100%;
+        height: 100%;
+      }
+      #anno {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      #debug {
+        background: #f9f9f9;
+        border: 1px solid #ccc;
+        padding: 8px;
+        margin-top: 12px;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h3 style="text-align: center">Playground</h3>
+    <div id="mt-root">
+      <div id="board-wrap">
+        <div id="board"></div>
+        <svg id="anno" viewBox="0 0 340 340"></svg>
+      </div>
+      <progress
+        id="progress-bar"
+        value="0"
+        max="1"
+        style="display: block; margin: 8px auto; width: 340px"
+      ></progress>
+      <div
+        id="progress-text"
+        style="text-align: center; font-size: 12px; margin-bottom: 6px"
+      ></div>
+      <div
+        id="move-list"
+        style="
+          text-align: center;
+          font-size: 14px;
+          line-height: 1.6;
+          margin-top: 4px;
+        "
+      ></div>
+      <pre id="debug"></pre>
+    </div>
+
+    <script src="../anki-media/_chess.js"></script>
+    <script src="../anki-media/_chessboard-1.0.0.js"></script>
+    <script src="../dist/anki-mt.bundle.js"></script>
+    <script>
+      const debugEl = document.getElementById('debug');
+      function log(msg) {
+        debugEl.innerText += msg + '\\n';
+      }
+
+      log('Playground booting…');
+      log('typeof Chess: ' + typeof Chess);
+      log('typeof Chessboard: ' + typeof Chessboard);
+
+      const fields = {
+        fen: 'start',
+        sanJson: JSON.stringify(['d4', 'd5', 'Nf3', 'Nf6']),
+      };
+      log('Fields: ' + fields.sanJson);
+
+      try {
+        AnkiMoveTrainer.init(document.getElementById('mt-root'), fields, {
+          autoAnswer: false,
+          pieceTheme: '../anki-media/_chessboard-img/{piece}.png',
+          speeds: { move: 150, snapback: 120, trash: 80 },
+          delayMs: 450,
+        });
+        log('AnkiMoveTrainer.init called successfully');
+      } catch (err) {
+        log('ERROR: ' + err.message);
+      }
+    </script>
+  </body>
+</html>
