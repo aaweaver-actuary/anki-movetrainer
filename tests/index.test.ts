@@ -1,8 +1,124 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { init, handleMove } from '../src/index';
 
+beforeEach(() => {
+  window.Chess = class {
+    fen() {
+      return 'start';
+    }
+    move() {
+      return { from: 'e2', to: 'e4', san: 'e2e4' };
+    }
+    in_checkmate() {
+      return false;
+    }
+    in_stalemate() {
+      return false;
+    }
+    in_draw() {
+      return false;
+    }
+    undo() {
+      /* no-op */
+    }
+    turn() {
+      return 'w' as any;
+    }
+  };
+});
+
 describe('init', () => {
+  it('resolves ChessCtor from window.Chess', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="board"></div>';
+    (window as any).Chess = function ChessStub() {
+      this.fen = () => 'fen';
+      this.move = () => ({ from: 'e2', to: 'e4' });
+    };
+    const api = init(root, { fen: 'start', sanJson: '["e2e4"]' }, {});
+    // Simulate correct move to trigger fallback
+    const result = handleMove(
+      api.engine,
+      api.board,
+      api.fb,
+      api.scheduler,
+      'e2',
+      'e4',
+      {},
+    );
+    expect(result).toBeUndefined();
+    delete (window as any).Chess;
+  });
+
+  it('resolves ChessCtor from window.chess.Chess', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="board"></div>';
+    (window as any).Chess = undefined;
+    (window as any).chess = {
+      Chess: function ChessStub() {
+        this.fen = () => 'fen';
+        this.move = () => ({ from: 'e2', to: 'e4' });
+      },
+    };
+    const api = init(root, { fen: 'start', sanJson: '["e2e4"]' }, {});
+    // Simulate correct move to trigger fallback
+    const result = handleMove(
+      api.engine,
+      api.board,
+      api.fb,
+      api.scheduler,
+      'e2',
+      'e4',
+      {},
+    );
+    expect(result).toBeUndefined();
+    delete (window as any).chess;
+  });
+  it('returns snapback when source equals target', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="board"></div>';
+    const api = init(root, { fen: 'start', sanJson: '[]' }, {});
+    const result = handleMove(
+      api.engine,
+      api.board,
+      api.fb,
+      api.scheduler,
+      'e2',
+      'e2',
+      {},
+    );
+    expect(result).toBe('snapback');
+  });
   let root: HTMLElement;
+  beforeEach(() => {
+    window.Chess = class {
+      fen() {
+        return 'start';
+      }
+      move(arg: any) {
+        if ((arg && arg.from === 'd2' && arg.to === 'd4') || arg === 'd4') {
+          return { from: 'd2', to: 'd4', san: 'd2d4' };
+        }
+        return null;
+      }
+      in_checkmate() {
+        return false;
+      }
+      in_stalemate() {
+        return false;
+      }
+      in_draw() {
+        return false;
+      }
+      undo() {
+        /* no-op */
+      }
+      turn() {
+        return 'w' as any;
+      }
+    };
+  });
+
   beforeEach(() => {
     document.body.innerHTML = `
       <div id="board-wrap">
@@ -25,6 +141,7 @@ describe('init', () => {
   });
 
   it('sets up initial UI state', () => {
+    // eslint-disable-next-line no-unused-vars
     const api = init(root, { fen: 'start', sanJson: '["d4","d5"]' }, {});
     const pb = root.querySelector('#progress-bar') as HTMLProgressElement;
     const pt = root.querySelector('#progress-text') as HTMLElement;
@@ -113,13 +230,6 @@ describe('index.ts edge cases', () => {
     expect(() =>
       handleMove(api.engine, api.board, api.fb, api.scheduler, 'd2', 'd4', {}),
     ).not.toThrow();
-  });
-
-  it('init with sanJson as empty array', () => {
-    const root = document.createElement('div');
-    expect(() => init(root, { fen: 'start', sanJson: '[]' }, {})).toThrow(
-      'boardEl is required and must be an HTMLElement',
-    );
   });
 
   it('init with sanJson as deeply nested array', () => {

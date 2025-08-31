@@ -1,13 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createEngine } from '../src/engine';
-import { safeExpectedMove } from '../src/engine'; // Import safeExpectedMove for testing
-
-declare global {
-  interface Window {
-    Chess?: new (fen?: string) => any;
-    chess?: { Chess?: new (fen?: string) => any };
-  }
-}
+import { safeExpectedMove } from '../src/helpers/engineHelpers';
+import { getChessCtorFromWindow } from '../src/helpers/engineHelpers';
+import { mountBoard } from '../src/ui';
 
 // Minimal stub for chess.js for isolated testing
 class FakeChess {
@@ -20,7 +15,8 @@ class FakeChess {
   fen() {
     return this.fenStr;
   }
-  move(arg: any, opts?: any) {
+  // eslint-disable-next-line no-unused-vars
+  move(arg: any, _opts?: any) {
     // Accept SAN string or {from, to, promotion}
     if (typeof arg === 'string') {
       if (arg === 'd4') {
@@ -68,7 +64,51 @@ beforeEach(() => {
   window.Chess = FakeChess as any;
 });
 
+describe('getChessCtorFromWindow', () => {
+  it('returns window.chess.Chess if present', () => {
+    const win = { chess: { Chess: 'ctor' } };
+    expect(getChessCtorFromWindow(win)).toBe('ctor');
+  });
+  it('returns window.chess if Chess is missing', () => {
+    const win = { chess: 'ctor' };
+    expect(getChessCtorFromWindow(win)).toBe('ctor');
+  });
+  it('returns undefined if chess is missing', () => {
+    const win = {};
+    expect(getChessCtorFromWindow(win)).toBeUndefined();
+  });
+  it('returns undefined if chess is null', () => {
+    const win = { chess: null };
+    expect(getChessCtorFromWindow(win)).toBeUndefined();
+  });
+});
 describe('createEngine', () => {
+  describe('createEngine sanSeq fallback coverage', () => {
+    it('handles undefined sanSeq', () => {
+      // @ts-expect-error
+      const eng = createEngine({ fen: 'start', sanSeq: undefined });
+      expect(eng.getSeq()).toEqual([]);
+      expect(eng.getTotal()).toBe(0);
+    });
+    it('handles null sanSeq', () => {
+      // @ts-expect-error
+      const eng = createEngine({ fen: 'start', sanSeq: null });
+      expect(eng.getSeq()).toEqual([]);
+      expect(eng.getTotal()).toBe(0);
+    });
+    it('handles empty string sanSeq', () => {
+      // @ts-expect-error
+      const eng = createEngine({ fen: 'start', sanSeq: '' });
+      expect(eng.getSeq()).toEqual([]);
+      expect(eng.getTotal()).toBe(0);
+    });
+    it('handles omitted sanSeq', () => {
+      // @ts-expect-error
+      const eng = createEngine({ fen: 'start' });
+      expect(eng.getSeq()).toEqual([]);
+      expect(eng.getTotal()).toBe(0);
+    });
+  });
   // Robustness: always check FEN and step after moves
   it('initializes with start FEN and move sequence', () => {
     const eng = createEngine({ fen: 'start', sanSeq: ['d4', 'd5'] });
@@ -77,6 +117,139 @@ describe('createEngine', () => {
     expect(eng.getTotal()).toBe(2);
     expect(eng.getSeq()).toEqual(['d4', 'd5']);
   });
+  describe('engine.ts new features', () => {
+    describe('getStatus explicit path coverage', () => {
+      it('returns Checkmate if in_checkmate returns true', () => {
+        const ChessCtor = function () {
+          return {
+            fen: () => 'start',
+            in_checkmate: () => true,
+            in_stalemate: () => false,
+            in_draw: () => false,
+          };
+        };
+        const eng = createEngine({ fen: 'start', sanSeq: [], ChessCtor });
+        expect(eng.getStatus()).toBe('checkmate');
+      });
+
+      it('returns Stalemate if in_stalemate returns true', () => {
+        const ChessCtor = function () {
+          return {
+            fen: () => 'start',
+            in_checkmate: () => false,
+            in_stalemate: () => true,
+            in_draw: () => false,
+          };
+        };
+        const eng = createEngine({ fen: 'start', sanSeq: [], ChessCtor });
+        expect(eng.getStatus()).toBe('stalemate');
+      });
+
+      it('returns Draw if in_draw returns true', () => {
+        const ChessCtor = function () {
+          return {
+            fen: () => 'start',
+            in_checkmate: () => false,
+            in_stalemate: () => false,
+            in_draw: () => true,
+          };
+        };
+        const eng = createEngine({ fen: 'start', sanSeq: [], ChessCtor });
+        expect(eng.getStatus()).toBe('draw');
+      });
+
+      it('returns Ongoing if none are true', () => {
+        const ChessCtor = function () {
+          return {
+            fen: () => 'start',
+            in_checkmate: () => false,
+            in_stalemate: () => false,
+            in_draw: () => false,
+          };
+        };
+        const eng = createEngine({ fen: 'start', sanSeq: [], ChessCtor });
+        expect(eng.getStatus()).toBe('ongoing');
+      });
+
+      it('returns Unknown if error is thrown', () => {
+        const ChessCtor = function () {
+          return {
+            fen: () => 'start',
+            in_checkmate: () => {
+              throw new Error('fail');
+            },
+          };
+        };
+        const eng = createEngine({ fen: 'start', sanSeq: [], ChessCtor });
+        expect(eng.getStatus()).toBe('unknown');
+      });
+    });
+    it('undo reverts last move and fen/step', () => {
+      const eng = createEngine({ fen: 'start', sanSeq: ['d4', 'd5'] });
+      eng.tryUserMove({ from: 'd2', to: 'd4' });
+      expect(eng.getStep()).toBe(1);
+      expect(eng.undo()).toBe(true);
+      expect(eng.getStep()).toBe(0);
+      expect(eng.getFen()).toBe('start');
+      // Undo at step 0 does nothing
+      expect(eng.undo()).toBe(false);
+    });
+
+    it('redo re-applies next move and updates fen/step', () => {
+      const eng = createEngine({ fen: 'start', sanSeq: ['d4', 'd5'] });
+      eng.tryUserMove({ from: 'd2', to: 'd4' });
+      eng.undo();
+      expect(eng.redo()).toBe(true);
+      expect(eng.getStep()).toBe(1);
+      // Redo at end of sequence does nothing
+      eng.tryUserMove({ from: 'd7', to: 'd5' });
+      expect(eng.redo()).toBe(false);
+    });
+
+    it('getHistory returns all moves made with FEN', () => {
+      const eng = createEngine({ fen: 'start', sanSeq: ['d4', 'd5'] });
+      expect(eng.getHistory()).toEqual([]);
+      eng.tryUserMove({ from: 'd2', to: 'd4' });
+      const hist = eng.getHistory();
+      expect(hist.length).toBe(1);
+      expect(hist[0].from).toBe('d2');
+      expect(hist[0].to).toBe('d4');
+      expect(typeof hist[0].fen).toBe('string');
+      eng.tryUserMove({ from: 'd7', to: 'd5' });
+      expect(eng.getHistory().length).toBe(2);
+    });
+
+    it('getStatus returns correct game status', () => {
+      const eng = createEngine({ fen: 'start', sanSeq: ['d4'] });
+      // FakeChess does not implement status, so returns ongoing or unknown
+      expect(['ongoing', 'unknown']).toContain(eng.getStatus());
+      // Should not throw on edge cases
+      eng.tryUserMove({ from: 'd2', to: 'd4' });
+      expect(['ongoing', 'unknown']).toContain(eng.getStatus());
+    });
+
+    it('reset restores initial state', () => {
+      const eng = createEngine({ fen: 'start', sanSeq: ['d4', 'd5'] });
+      eng.tryUserMove({ from: 'd2', to: 'd4' });
+      eng.tryUserMove({ from: 'd7', to: 'd5' });
+      expect(eng.getStep()).toBe(2);
+      eng.reset();
+      expect(eng.getStep()).toBe(0);
+      expect(eng.getFen()).toBe('start');
+      expect(eng.getHistory()).toEqual([]);
+    });
+
+    it('dummy engine methods are safe and return expected defaults', () => {
+      // @ts-expect-error
+      const eng = createEngine();
+      expect(eng.undo()).toBe(false);
+      expect(eng.redo()).toBe(false);
+      expect(eng.getHistory()).toEqual([]);
+      expect(eng.getStatus()).toBe('unknown');
+      expect(() => eng.reset()).not.toThrow();
+    });
+  });
+  // ...existing code...
 
   it('returns expected move at current step', () => {
     const eng = createEngine({ fen: 'start', sanSeq: ['d4', 'd5'] });
@@ -280,5 +453,36 @@ describe('engine.ts edge cases', () => {
     expect(eng.getStep()).toBe(1);
     expect(eng.getTotal()).toBe(2);
     expect(eng.getSeq()).toEqual(['d4', 'd5']);
+  });
+});
+
+describe('createEngine dummy engine coverage', () => {
+  it('returns dummy engine and covers all safe methods when params are missing/invalid', () => {
+    // @ts-expect-error
+    const eng = createEngine();
+    expect(eng.tryUserMove({ from: '', to: '' })).toEqual({
+      correct: false,
+      snapback: true,
+      fen: 'start',
+    });
+    expect(eng.expectedMove()).toBeUndefined();
+    expect(eng.getFen()).toBe('start');
+    expect(eng.getStep()).toBe(0);
+    expect(eng.getTotal()).toBe(0);
+    expect(eng.getSeq()).toEqual([]);
+  });
+});
+
+describe('mountBoard error coverage', () => {
+  it('throws if options.onDrop is missing or not a function', () => {
+    const boardEl = document.createElement('div');
+    // Missing onDrop
+    expect(() => mountBoard(boardEl, { fen: 'start' } as any)).toThrow(
+      'options.onDrop is required and must be a function',
+    );
+    // onDrop is not a function
+    expect(() =>
+      mountBoard(boardEl, { fen: 'start', onDrop: 42 } as any),
+    ).toThrow('options.onDrop is required and must be a function');
   });
 });

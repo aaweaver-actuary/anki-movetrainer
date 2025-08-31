@@ -1,3 +1,11 @@
+import { GameStatus } from './GameStatus';
+export enum GameStatus {
+  Checkmate = 'checkmate',
+  Stalemate = 'stalemate',
+  Draw = 'draw',
+  Ongoing = 'ongoing',
+  Unknown = 'unknown',
+}
 // Engine type definitions
 
 export interface Engine {
@@ -12,4 +20,9 @@ export interface Engine {
   getStep(): number;
   getTotal(): number;
   getSeq(): string[];
+  undo(): boolean;
+  redo(): boolean;
+  getHistory(): Array<{ from: string; to: string; fen: string }>;
+  getStatus(): GameStatus;
+  reset(): void;
 }

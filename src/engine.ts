@@ -11,7 +11,13 @@
  */
 
 import { Engine } from './types/engine';
+import { GameStatus } from './types/GameStatus';
 import { Chess as ChessESM } from 'chess.js';
+import {
+  resolveChessCtor,
+  safeExpectedMove,
+  createDummyEngine,
+} from './helpers/engineHelpers';
 
 export function assignChessGlobal() {
   if (typeof window !== 'undefined' && !('Chess' in window)) {
@@ -19,78 +25,89 @@ export function assignChessGlobal() {
   }
 }
 
+type MoveRecord = {
+  from: string;
+  to: string;
+  fen: string;
+};
+
 // Call on module load for browser usage
 assignChessGlobal();
 
-function resolveChessCtor(): any {
-  const ctor =
-    window.Chess ||
-    (window.chess && (window.chess.Chess || (window.chess as any)));
-  if (!ctor)
-    throw new Error(
-      'chess.js global not found; need UMD build exposing window.Chess',
-    );
-  return ctor;
-}
-
-export function safeExpectedMove(
-  ChessCtor: any,
-  game: any,
-  seq: string[],
-  step: number,
-) {
-  try {
-    const tmp = new ChessCtor(game.fen());
-    const exp = tmp.move(seq[step], { sloppy: true });
-    if (!exp) return undefined;
-    return { from: exp.from as string, to: exp.to as string };
-  } catch {
-    return undefined;
-  }
-}
-
 export function createEngine(params: {
-  // Defensive: always validate input
   fen: string;
   sanSeq: string[];
   ChessCtor?: any;
 }): Engine {
   if (!params || typeof params !== 'object' || !params.fen || !params.sanSeq) {
-    // Return a dummy engine that never updates state
-    return {
-      tryUserMove() {
-        return { correct: false, snapback: true, fen: 'start' };
-      },
-      expectedMove() {
-        return undefined;
-      },
-      getFen() {
-        return 'start';
-      },
-      getStep() {
-        return 0;
-      },
-      getTotal() {
-        return 0;
-      },
-      getSeq() {
-        return [];
-      },
-    };
+    return createDummyEngine();
   }
   const ChessCtor = params?.ChessCtor || resolveChessCtor();
-  const game = new ChessCtor(params.fen);
+  const initialFen = params.fen;
   const seq = params.sanSeq || [];
   let step = 0;
-  let fen = params.fen;
+  let fen = initialFen;
+  let game = new ChessCtor(initialFen);
+  let history: Array<{ from: string; to: string; fen: string }> = [];
+
+  function updateHistory() {
+    if (step > 0) {
+      const lastMove = seq[step - 1];
+      const tmp = new ChessCtor(initialFen);
+      for (let i = 0; i < step; i++) {
+        tmp.move(seq[i], { sloppy: true });
+      }
+      const moveObj = tmp.move(lastMove, { sloppy: true });
+      if (moveObj) {
+        const { from, to, fen } = createMoveRecord(moveObj, tmp);
+        history[step - 1] = updateMoveRecord({
+          from,
+          to,
+          fen,
+        });
+      }
+    }
+  }
+
+  function createMoveRecord(
+    moveObj: { from: string; to: string } | undefined,
+    tmp: any,
+  ): MoveRecord {
+    if (!moveObj) {
+      return { from: '', to: '', fen: tmp.fen() };
+    }
+    const { from, to } = moveObj;
+    const fen = tmp.fen();
+    return { from, to, fen };
+  }
+
+  function updateMoveRecord({ from, to, fen }: MoveRecord): MoveRecord {
+    return {
+      from,
+      to,
+      fen,
+    };
+  }
+
+  function getStatus(): GameStatus {
+    try {
+      if ('in_checkmate' in game && typeof game.in_checkmate === 'function') {
+        if (game.in_checkmate()) return GameStatus.Checkmate;
+      }
+      if ('in_stalemate' in game && typeof game.in_stalemate === 'function') {
+        if (game.in_stalemate()) return GameStatus.Stalemate;
+      }
+      if ('in_draw' in game && typeof game.in_draw === 'function') {
+        if (game.in_draw()) return GameStatus.Draw;
+      }
+      return GameStatus.Ongoing;
+    } catch {
+      return GameStatus.Unknown;
+    }
+  }
+
   return {
-    /**
-     * Tries to make a user move. Returns safe result for invalid input.
-     * @param move { from: string; to: string }
-     * @returns { correct, snapback, fen, expected }
-     */
     tryUserMove(move: { from: string; to: string }) {
-      // Defensive: handle null/undefined/malformed input
       if (!move || typeof move !== 'object' || !move.from || !move.to) {
         return { correct: false, snapback: true, fen, expected: undefined };
       }
@@ -100,10 +117,10 @@ export function createEngine(params: {
         fen = game.fen();
         return { correct: false, snapback: true, fen, expected };
       }
-      // Accept move, advance step, update FEN
       game.move({ from: move.from, to: move.to });
       step += 1;
       fen = game.fen();
+      updateHistory();
       return { correct: true, snapback: false, fen, expected };
     },
     expectedMove() {
@@ -120,6 +137,38 @@ export function createEngine(params: {
     },
     getSeq() {
       return seq;
+    },
+    undo() {
+      if (step > 0) {
+        game.undo();
+        step -= 1;
+        fen = game.fen();
+        return true;
+      }
+      return false;
+    },
+    redo() {
+      if (step < seq.length) {
+        const move = seq[step];
+        const result = game.move(move, { sloppy: true });
+        if (result) {
+          step += 1;
+          fen = game.fen();
+          updateHistory();
+          return true;
+        }
+      }
+      return false;
+    },
+    getHistory() {
+      return history.slice(0, step);
+    },
+    getStatus,
+    reset() {
+      game = new ChessCtor(initialFen);
+      step = 0;
+      fen = initialFen;
+      history = [];
     },
   };
 }

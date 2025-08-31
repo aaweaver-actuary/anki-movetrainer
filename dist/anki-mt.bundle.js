@@ -3361,14 +3361,22 @@
 
   /**
    * @module engine
-   * Game-state wrapper around chess.js that:
-   * - Tracks step in the SAN sequence
-   * - Compares played vs expected using {from,to}
-   * - Restores on incorrect move
+   * Game-state wrapper around chess.js for chess study apps.
+   * Robustness goals:
+   * - Always update FEN after every move, including edge cases.
+   * - Use guard clauses for all public API methods to handle null/undefined/malformed input.
+   * - Never throw on invalid input; always return a safe result.
+   * - Document expected behavior for invalid input.
+   * - Restore FEN after incorrect move.
+   * - Support promotion, castling, and other chess-specific scenarios.
    */
-  if (typeof window !== 'undefined' && !('Chess' in window)) {
-      window.Chess = Chess;
+  function assignChessGlobal() {
+      if (typeof window !== 'undefined' && !('Chess' in window)) {
+          window.Chess = Chess;
+      }
   }
+  // Call on module load for browser usage
+  assignChessGlobal();
   function resolveChessCtor() {
       const ctor = window.Chess ||
           (window.chess && (window.chess.Chess || window.chess));
@@ -3376,47 +3384,85 @@
           throw new Error('chess.js global not found; need UMD build exposing window.Chess');
       return ctor;
   }
-  function createEngine(params) {
-      const ChessCtor = resolveChessCtor();
-      const startFen = params.fen && params.fen.trim() !== '' ? params.fen : 'start';
-      const game = new ChessCtor(startFen === 'start' ? undefined : startFen);
-      let step = 0;
-      const seq = params.sanSeq.slice();
-      function expectedMove() {
-          try {
-              const tmp = new ChessCtor(game.fen());
-              const exp = tmp.move(seq[step], { sloppy: true });
-              if (!exp)
-                  return undefined;
-              return { from: exp.from, to: exp.to };
-          }
-          catch {
+  function safeExpectedMove(ChessCtor, game, seq, step) {
+      try {
+          const tmp = new ChessCtor(game.fen());
+          const exp = tmp.move(seq[step], { sloppy: true });
+          if (!exp)
               return undefined;
-          }
+          return { from: exp.from, to: exp.to };
       }
-      function tryUserMove(move) {
-          const fenBefore = game.fen();
-          const mv = game.move({ from: move.from, to: move.to, promotion: 'q' });
-          if (!mv) {
-              // illegal move in chess.js terms → snapback and restore
-              return { correct: false, snapback: true, fen: fenBefore };
-          }
-          const exp = expectedMove();
-          const correct = !!exp && mv.from === exp.from && mv.to === exp.to;
-          if (!correct) {
-              game.undo();
-              return { correct: false, snapback: true, fen: fenBefore, expected: exp };
-          }
-          step += 1;
-          return { correct: true, snapback: false, fen: game.fen() };
+      catch {
+          return undefined;
       }
+  }
+  function createEngine(params) {
+      if (!params || typeof params !== 'object' || !params.fen || !params.sanSeq) {
+          // Return a dummy engine that never updates state
+          return {
+              tryUserMove() {
+                  return { correct: false, snapback: true, fen: 'start' };
+              },
+              expectedMove() {
+                  return undefined;
+              },
+              getFen() {
+                  return 'start';
+              },
+              getStep() {
+                  return 0;
+              },
+              getTotal() {
+                  return 0;
+              },
+              getSeq() {
+                  return [];
+              },
+          };
+      }
+      const ChessCtor = params?.ChessCtor || resolveChessCtor();
+      const game = new ChessCtor(params.fen);
+      const seq = params.sanSeq || [];
+      let step = 0;
+      let fen = params.fen;
       return {
-          tryUserMove,
-          expectedMove,
-          getFen: () => game.fen(),
-          getStep: () => step,
-          getTotal: () => seq.length,
-          getSeq: () => seq,
+          /**
+           * Tries to make a user move. Returns safe result for invalid input.
+           * @param move { from: string; to: string }
+           * @returns { correct, snapback, fen, expected }
+           */
+          tryUserMove(move) {
+              // Defensive: handle null/undefined/malformed input
+              if (!move || typeof move !== 'object' || !move.from || !move.to) {
+                  return { correct: false, snapback: true, fen, expected: undefined };
+              }
+              const expected = safeExpectedMove(ChessCtor, game, seq, step);
+              if (!expected || move.from !== expected.from || move.to !== expected.to) {
+                  game.undo();
+                  fen = game.fen();
+                  return { correct: false, snapback: true, fen, expected };
+              }
+              // Accept move, advance step, update FEN
+              game.move({ from: move.from, to: move.to });
+              step += 1;
+              fen = game.fen();
+              return { correct: true, snapback: false, fen, expected };
+          },
+          expectedMove() {
+              return safeExpectedMove(ChessCtor, game, seq, step);
+          },
+          getFen() {
+              return fen;
+          },
+          getStep() {
+              return step;
+          },
+          getTotal() {
+              return seq.length;
+          },
+          getSeq() {
+              return seq;
+          },
       };
   }
 
@@ -3425,6 +3471,18 @@
    * Thin wrapper for chessboard.js mounting and event binding.
    */
   function mountBoard(boardEl, opts) {
+      if (!boardEl || !(boardEl instanceof HTMLElement)) {
+          throw new Error('boardEl is required and must be an HTMLElement');
+      }
+      if (!opts || typeof opts !== 'object') {
+          throw new Error('options are required');
+      }
+      if (typeof opts.fen !== 'string') {
+          throw new Error('options.fen is required and must be a string');
+      }
+      if (typeof opts.onDrop !== 'function') {
+          throw new Error('options.onDrop is required and must be a function');
+      }
       const Chessboard = window.Chessboard;
       if (typeof Chessboard !== 'function')
           throw new Error('chessboard.js global not found');
@@ -3476,8 +3534,21 @@
       function clearAnno() {
           if (!anno)
               return;
-          const kids = Array.from(anno.children).filter((n) => n.tagName !== 'defs');
-          kids.forEach((n) => n.remove());
+          // Remove all children except the first <defs> (if any)
+          let firstDefs = null;
+          Array.from(anno.children).forEach((n) => {
+              if (n.tagName === 'defs') {
+                  if (!firstDefs) {
+                      firstDefs = n;
+                  }
+                  else {
+                      n.remove(); // Remove extra <defs>
+                  }
+              }
+              else {
+                  n.remove();
+              }
+          });
       }
       function sqRect(sq, size) {
           const file = sq.charCodeAt(0) - 97;
@@ -3535,11 +3606,12 @@
                   pb.value = step;
               }
               if (pt) {
-                  pt.textContent = `Move ${Math.min(step + 1, total)} of ${total}`;
+                  // Show actual move number, even if it exceeds total
+                  pt.textContent = `Move ${step + 1} of ${total}`;
               }
           },
           listPlayed(san, step) {
-              if (!ml)
+              if (!ml || !Array.isArray(san))
                   return;
               let html = '';
               for (let i = 0; i < step; i++) {
@@ -3640,55 +3712,61 @@
       return pieceMap[name] || '';
   }
 
+  function handleMove(engine, board, feedback, scheduler, source, target, opts = {}) {
+      if (source === target)
+          return 'snapback';
+      const res = engine.tryUserMove({ from: source, to: target });
+      if (!res.correct) {
+          feedback.flashWrong(res.expected?.from, res.expected?.to);
+          if (typeof scheduler.fail === 'function')
+              scheduler.fail();
+          board.position(res.fen);
+          return 'snapback';
+      }
+      feedback.progress(engine.getStep(), engine.getTotal());
+      feedback.listPlayed(engine.getSeq(), engine.getStep());
+      if (engine.getStep() === engine.getTotal()) {
+          if (typeof scheduler.pass === 'function')
+              scheduler.pass();
+      }
+      else {
+          if (typeof setTimeout === 'function') {
+              const nextSAN = engine.getSeq()[engine.getStep()];
+              setTimeout(() => {
+                  const exp = engine.expectedMove();
+                  if (exp?.from && exp?.to) {
+                      const ChessCtor = window.Chess ||
+                          (window.chess && window.chess.Chess);
+                      const tmp = new ChessCtor(engine.getFen());
+                      tmp.move(nextSAN, { sloppy: true });
+                  }
+              }, opts.delayMs ?? 450);
+          }
+      }
+  }
   function init(root, fields, opts = {}) {
       const fen = fields.fen?.trim() || 'start';
-      const sanSeq = JSON.parse(fields.sanJson || '[]');
+      let sanSeq = [];
+      try {
+          const parsed = JSON.parse(fields.sanJson || '[]');
+          sanSeq = Array.isArray(parsed) ? parsed.flat() : [];
+      }
+      catch {
+          sanSeq = [];
+      }
       const engine = createEngine({ fen, sanSeq });
       const boardEl = root.querySelector('#board');
+      if (!(boardEl instanceof HTMLElement)) {
+          throw new Error('boardEl is required and must be an HTMLElement');
+      }
+      const fb = createFeedback(root);
+      const scheduler = createScheduler({ autoAnswer: opts.autoAnswer ?? true });
       const board = mountBoard(boardEl, {
           fen,
           pieceTheme: opts.pieceTheme ?? ((name) => bundledPieceTheme(name)),
           speeds: opts.speeds,
-          onDrop: (source, target) => {
-              if (source === target)
-                  return 'snapback';
-              const res = engine.tryUserMove({ from: source, to: target });
-              if (!res.correct) {
-                  const feedback = fb;
-                  feedback.flashWrong(res.expected?.from, res.expected?.to);
-                  scheduler.fail();
-                  // restore UI to engine FEN to guarantee snapback
-                  board.position(res.fen);
-                  return 'snapback';
-              }
-              fb.progress(engine.getStep(), engine.getTotal());
-              fb.listPlayed(engine.getSeq(), engine.getStep());
-              // completion?
-              if (engine.getStep() === engine.getTotal()) {
-                  scheduler.pass();
-              }
-              else {
-                  // opponent reply with small delay
-                  if (typeof setTimeout === 'function') {
-                      const nextSAN = engine.getSeq()[engine.getStep()];
-                      setTimeout(() => {
-                          // engine-level auto-play for opponent: simulate expected move
-                          const exp = engine.expectedMove();
-                          if (exp?.from && exp?.to) {
-                              // “force” board to new fen via engine try (bypass correctness)
-                              // You can extend engine with an autoPlayExpected() if you prefer.
-                              const ChessCtor = window.Chess ||
-                                  (window.chess && window.chess.Chess);
-                              const tmp = new ChessCtor(engine.getFen());
-                              tmp.move(nextSAN, { sloppy: true });
-                          }
-                      }, opts.delayMs ?? 450);
-                  }
-              }
-          },
+          onDrop: (source, target) => handleMove(engine, board, fb, scheduler, source, target, opts),
       });
-      const fb = createFeedback(root);
-      const scheduler = createScheduler({ autoAnswer: opts.autoAnswer ?? true });
       // initial UI
       fb.progress(engine.getStep(), engine.getTotal());
       fb.listPlayed(engine.getSeq(), engine.getStep());
@@ -3699,6 +3777,7 @@
   if (typeof window !== 'undefined')
       window.AnkiMoveTrainer = { init };
 
+  exports.handleMove = handleMove;
   exports.init = init;
 
 }));

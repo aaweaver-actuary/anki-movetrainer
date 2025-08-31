@@ -1,47 +1,22 @@
 # Linting Migration Guide for TypeScript Projects
 
-This guide documents the recommended refactor and migration steps to enable clean linting in TypeScript projects, especially when using external APIs or ambient type declarations.
+## Current Status
+- Migration to `.d.ts` files for type signatures is complete.
+- ESLint is now clean except for intentional disables (e.g., enums).
+- All implementation files are linted and type-safe.
 
----
+## Next Steps
+- Maintain type hygiene as new helpers are extracted (see `next-steps.md`).
+- Update lint config if new patterns or helper modules are added.
 
-## Why Refactor?
-
-TypeScript type/interface signatures often require unused parameters for API compatibility. ESLint cannot distinguish between required and truly unused parameters in type signatures, leading to false positives. The solution is to separate type definitions from implementation code.
-
----
-
-## Migration Steps
-
-### 1. Move Type/Interface Declarations to `.d.ts` Files
-- Create a directory for ambient/type declarations, e.g. `src/types/` or `src/vendor/`.
-- Move all pure type/interface definitions (API surfaces, external library types, etc.) from `.ts` files to `.d.ts` files.
-  - Example: Move `Engine`, `Feedback`, `BoardHandle`, and related interfaces from `src/types.ts` to `src/types/engine.d.ts`, `src/types/feedback.d.ts`, etc.
-  - Move any global interface augmentations (e.g. `declare global { ... }`) to `.d.ts` files.
-
-### 2. Keep Implementation in `.ts`/`.tsx` Files
-- Only keep actual logic, functions, and classes in `.ts`/`.tsx` files.
-- Import types from your new `.d.ts` files as needed.
-
-### 3. Update Imports
-- Update all imports in your implementation files to reference the new `.d.ts` locations for types.
-
-### 4. Configure ESLint
-- In your ESLint config, ignore all `.d.ts` files:
-  ```js
-  {
-    ignores: ['dist/**', 'lib/**', 'node_modules/**', '**/*.d.ts'],
-  }
-  ```
-- This will prevent ESLint from reporting unused variable errors for type signatures.
-
-### 5. Lint Implementation Files
-- Run ESLint on your `.ts`/`.tsx` files. You should only see actionable lint errors related to code, not type/interface signatures.
-
-### 6. Type Hygiene
-- Use the TypeScript compiler (`tsc`) to check for type errors and unused exports/types.
-
-### 7. (Optional) Document Your Approach
-- Add a note in your README or CONTRIBUTING guide explaining why types are split and how linting is configured.
+## Migration Steps (Completed)
+- All steps below have been completed:
+  - Move type/interface declarations to `.d.ts` files
+  - Keep implementation in `.ts`/`.tsx` files
+  - Update imports
+  - Configure ESLint to ignore `.d.ts` files
+  - Lint implementation files
+  - Maintain type hygiene
 
 ---
 
