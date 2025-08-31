@@ -4,7 +4,51 @@ import { createFeedback } from './feedback';
 import { createScheduler } from './scheduler';
 import { bundledPieceTheme } from './pieces';
 
+import type { Engine } from './types';
+import type { BoardHandle } from './types';
+import type { Feedback } from './types';
 import type { InitOptions } from './types';
+
+export function handleMove(
+  engine: Engine,
+  board: BoardHandle,
+  feedback: Feedback,
+  scheduler: { fail: () => void; pass: () => void },
+  source: string,
+  target: string,
+  opts: Partial<InitOptions> = {},
+): void | 'snapback' {
+  if (source === target) return 'snapback';
+  const res = engine.tryUserMove({ from: source, to: target });
+  if (!res.correct) {
+    feedback.flashWrong(res.expected?.from, res.expected?.to);
+    if (typeof scheduler.fail === 'function') scheduler.fail();
+    board.position(res.fen);
+    return 'snapback';
+  }
+  feedback.progress(engine.getStep(), engine.getTotal());
+  feedback.listPlayed(engine.getSeq(), engine.getStep());
+  if (engine.getStep() === engine.getTotal()) {
+    if (typeof scheduler.pass === 'function') scheduler.pass();
+  } else {
+    if (typeof setTimeout === 'function') {
+      const nextSAN = engine.getSeq()[engine.getStep()];
+      setTimeout(() => {
+        const exp = engine.expectedMove();
+        if (exp?.from && exp?.to) {
+          const ChessCtor =
+            (window as any).Chess ||
+            ((window as any).chess && (window as any).chess.Chess);
+          const tmp = new ChessCtor(engine.getFen());
+          const mv = tmp.move(nextSAN, { sloppy: true });
+          if (mv) {
+            // Optionally handle opponent move
+          }
+        }
+      }, opts.delayMs ?? 450);
+    }
+  }
+}
 
 export function init(
   root: HTMLElement,
@@ -12,57 +56,27 @@ export function init(
   opts: Partial<InitOptions> = {},
 ) {
   const fen = fields.fen?.trim() || 'start';
-  const sanSeq = JSON.parse(fields.sanJson || '[]') as string[];
+  let sanSeq: string[] = [];
+  try {
+    const parsed = JSON.parse(fields.sanJson || '[]');
+    sanSeq = Array.isArray(parsed) ? parsed.flat() : [];
+  } catch {
+    sanSeq = [];
+  }
   const engine = createEngine({ fen, sanSeq });
-  const boardEl = root.querySelector('#board') as HTMLElement;
+  const boardEl = root.querySelector('#board');
+  if (!(boardEl instanceof HTMLElement)) {
+    throw new Error('boardEl is required and must be an HTMLElement');
+  }
+  const fb = createFeedback(root);
+  const scheduler = createScheduler({ autoAnswer: opts.autoAnswer ?? true });
   const board = mountBoard(boardEl, {
     fen,
     pieceTheme: opts.pieceTheme ?? ((name: string) => bundledPieceTheme(name)),
     speeds: opts.speeds,
-    onDrop: (source, target) => {
-      if (source === target) return 'snapback';
-      const res = engine.tryUserMove({ from: source, to: target });
-      if (!res.correct) {
-        const feedback = fb;
-        feedback.flashWrong(res.expected?.from, res.expected?.to);
-        scheduler.fail();
-        // restore UI to engine FEN to guarantee snapback
-        board.position(res.fen);
-        return 'snapback';
-      }
-      fb.progress(engine.getStep(), engine.getTotal());
-      fb.listPlayed(engine.getSeq(), engine.getStep());
-      // completion?
-      if (engine.getStep() === engine.getTotal()) {
-        scheduler.pass();
-      } else {
-        // opponent reply with small delay
-        if (typeof setTimeout === 'function') {
-          const nextSAN = engine.getSeq()[engine.getStep()];
-          setTimeout(() => {
-            // engine-level auto-play for opponent: simulate expected move
-            const exp = engine.expectedMove();
-            if (exp?.from && exp?.to) {
-              // “force” board to new fen via engine try (bypass correctness)
-              // You can extend engine with an autoPlayExpected() if you prefer.
-              const ChessCtor =
-                (window as any).Chess ||
-                ((window as any).chess && (window as any).chess.Chess);
-              const tmp = new ChessCtor(engine.getFen());
-              const mv = tmp.move(nextSAN, { sloppy: true });
-              if (mv) {
-                // We don't advance engine step here; your existing onDrop path does this.
-                // In a fuller version, expose an engine.applyExpected() to advance step/FEN.
-              }
-            }
-          }, opts.delayMs ?? 450);
-        }
-      }
-    },
+    onDrop: (source, target) =>
+      handleMove(engine, board, fb, scheduler, source, target, opts),
   });
-
-  const fb = createFeedback(root);
-  const scheduler = createScheduler({ autoAnswer: opts.autoAnswer ?? true });
 
   // initial UI
   fb.progress(engine.getStep(), engine.getTotal());

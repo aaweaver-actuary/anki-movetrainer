@@ -4,19 +4,7 @@
  */
 
 import { BoardHandle } from './types';
-import 'chessboardjs/dist/chessboard-1.0.0.min.css'; // optional: bundle CSS
-import ChessboardImport from 'chessboardjs';
 
-declare global {
-  interface Window {
-    Chessboard?: any;
-  }
-}
-
-// Ensure the global (your existing code expects window.Chessboard)
-if (typeof window !== 'undefined' && !window.Chessboard) {
-  (window as any).Chessboard = ChessboardImport as any;
-}
 declare global {
   interface Window {
     Chessboard?: any;
@@ -32,6 +20,18 @@ export function mountBoard(
     onDrop: (source: string, target: string) => 'snapback' | void;
   },
 ): BoardHandle {
+  if (!boardEl || !(boardEl instanceof HTMLElement)) {
+    throw new Error('boardEl is required and must be an HTMLElement');
+  }
+  if (!opts || typeof opts !== 'object') {
+    throw new Error('options are required');
+  }
+  if (typeof opts.fen !== 'string') {
+    throw new Error('options.fen is required and must be a string');
+  }
+  if (typeof opts.onDrop !== 'function') {
+    throw new Error('options.onDrop is required and must be a function');
+  }
   const Chessboard = window.Chessboard;
   if (typeof Chessboard !== 'function')
     throw new Error('chessboard.js global not found');

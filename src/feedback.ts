@@ -37,8 +37,19 @@ export function createFeedback(root: HTMLElement): Feedback {
 
   function clearAnno() {
     if (!anno) return;
-    const kids = Array.from(anno.children).filter((n) => n.tagName !== 'defs');
-    kids.forEach((n) => n.remove());
+    // Remove all children except the first <defs> (if any)
+    let firstDefs: SVGDefsElement | null = null;
+    Array.from(anno.children).forEach((n) => {
+      if (n.tagName === 'defs') {
+        if (!firstDefs) {
+          firstDefs = n as SVGDefsElement;
+        } else {
+          n.remove(); // Remove extra <defs>
+        }
+      } else {
+        n.remove();
+      }
+    });
   }
 
   function sqRect(sq: string, size: number) {
@@ -106,11 +117,12 @@ export function createFeedback(root: HTMLElement): Feedback {
         pb.value = step;
       }
       if (pt) {
-        pt.textContent = `Move ${Math.min(step + 1, total)} of ${total}`;
+        // Show actual move number, even if it exceeds total
+        pt.textContent = `Move ${step + 1} of ${total}`;
       }
     },
     listPlayed(san: string[], step: number) {
-      if (!ml) return;
+      if (!ml || !Array.isArray(san)) return;
       let html = '';
       for (let i = 0; i < step; i++) {
         if (i % 2 === 0)

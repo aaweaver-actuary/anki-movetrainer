@@ -1,0 +1,156 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Playground</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- chessboard.css (needed for board sprites/layout) -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css"
+    />
+
+    <style>
+      #mt-root {
+        width: 340px;
+        margin: 24px auto;
+      }
+      #board-wrap {
+        position: relative;
+        width: 340px;
+        height: 340px;
+      }
+      #board {
+        width: 100%;
+        height: 100%;
+      }
+      #anno {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      #debug {
+        background: #f8f8f8;
+        border: 1px solid #ccc;
+        padding: 8px;
+        font:
+          12px/1.4 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        white-space: pre-wrap;
+        margin-top: 12px;
+      }
+      progress {
+        display: block;
+        width: 340px;
+        margin: 8px auto;
+      }
+      #move-list,
+      #progress-text {
+        text-align: center;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h3 style="text-align: center">Playground</h3>
+
+    <div id="mt-root">
+      <div id="board-wrap">
+        <div id="board"></div>
+        <svg id="anno" viewBox="0 0 340 340"></svg>
+      </div>
+      <progress id="progress-bar" value="0" max="1"></progress>
+      <div id="progress-text"></div>
+      <div id="move-list"></div>
+      <pre id="debug"></pre>
+    </div>
+
+    <script>
+      // tiny logger that also shows runtime errors in the panel
+      const dbg = document.getElementById('debug');
+      const log = (m) => (dbg.textContent += m + '\n');
+      window.onerror = (msg, src, line, col, err) => {
+        log(`UNCAUGHT: ${msg}`);
+        if (err && err.stack) log(err.stack);
+      };
+    </script>
+
+
+    <!-- chessboard UMD (global window.Chessboard) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script
+      crossorigin="anonymous"
+      src="https://cdn.jsdelivr.net/npm/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"
+    ></script>
+    <script>
+      // Ensure UMD/global attaches to window and jQuery is present
+      if (typeof window.Chessboard === 'undefined' && typeof Chessboard !== 'undefined') {
+        window.Chessboard = Chessboard;
+      }
+      if (!window.$ && window.jQuery) {
+        window.$ = window.jQuery;
+      }
+    </script>
+    <script>
+      log('before defining pieceTheme');
+      let pieceTheme = (name) =>
+        `https://cdn.jsdelivr.net/npm/@chrisoakman/chessboardjs@1.0.0/www/img/chesspieces/wikipedia/${name}.png`;
+    </script>
+    <!-- your single bundle (UMD: window.AnkiMoveTrainer) -->
+    <script src="../dist/anki-mt.bundle.js"></script>
+
+    <script>
+      // Minimal “Anki-like” fields. IMPORTANT: hide piece images complexity by using CDN pieceTheme.
+      const fields = {
+        fen: 'start',
+        sanJson: JSON.stringify(['e4', 'e5', 'Nf3', 'Nc6']),
+      };
+
+      // Sanity prints
+      log('typeof Chessboard: ' + typeof window.Chessboard);
+      log('window.Chessboard is function: ' + (typeof window.Chessboard === 'function'));
+      log('');
+      log('typeof AnkiMoveTrainer: ' + typeof window.AnkiMoveTrainer);
+      log('window.AnkiMoveTrainer present: ' + !!window.AnkiMoveTrainer);
+      log(
+        'typeof window.AnkiMoveTrainer.init: ' +
+          typeof window.AnkiMoveTrainer.init,
+      );
+      log('');
+      log('typeof $: ' + typeof window.$);
+      log('has $.fn: ' + !!(window.$ && window.$.fn));
+
+      // Use CDN-based piece sprites so we don't rely on any local images.
+      pieceTheme = (name) =>
+        `https://cdn.jsdelivr.net/npm/@chrisoakman/chessboardjs@1.0.0/www/img/chesspieces/wikipedia/${name}.png`;
+
+      // log pieceTheme
+      log('typeof pieceTheme: ' + typeof pieceTheme);
+      log('');
+
+      try {
+        // Mount. The bundle should query #board / etc. or build its own;
+        // either way, we pass a working pieceTheme and modest speeds.
+        const mtRoot = document.getElementById('mt-root');
+        window.AnkiMoveTrainer.init(mtRoot, fields, {
+          autoAnswer: false,
+          pieceTheme,
+          speeds: { move: 180, snapback: 150, trash: 120 },
+          delayMs: 450,
+        });
+        log('init OK');
+      } catch (e) {
+        log('ERROR: ' + (e && e.message ? e.message : e));
+      }
+
+      setTimeout(() => {
+        const imgs = document.querySelectorAll('#board img');
+        log(`imgs on board: ${imgs.length}`);
+        if (imgs[0]) log(`first img src: ${imgs[0].getAttribute('src')}`);
+      }, 400);
+    </script>
+  </body>
+</html>

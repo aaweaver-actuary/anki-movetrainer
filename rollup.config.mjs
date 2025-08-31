@@ -12,6 +12,9 @@ export default {
       format: 'umd',
       name: 'AnkiMoveTrainer', // window.AnkiMoveTrainer.init(...)
       sourcemap: false,
+      globals: {
+        '@chrisoakman/chessboardjs': 'Chessboard',
+      },
     },
   ],
   external: [],
