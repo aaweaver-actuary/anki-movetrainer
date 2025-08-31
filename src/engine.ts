@@ -10,7 +10,7 @@
  * - Support promotion, castling, and other chess-specific scenarios.
  */
 
-import { Engine } from './types';
+import { Engine } from './types/engine';
 import { Chess as ChessESM } from 'chess.js';
 
 export function assignChessGlobal() {
@@ -21,14 +21,8 @@ export function assignChessGlobal() {
 
 // Call on module load for browser usage
 assignChessGlobal();
-declare global {
-  interface Window {
-    Chess?: new (_fen?: string) => any;
-    chess?: { Chess?: new (_fen?: string) => any };
-  }
-}
 
-function resolveChessCtor(): new (fen?: string) => any {
+function resolveChessCtor(): any {
   const ctor =
     window.Chess ||
     (window.chess && (window.chess.Chess || (window.chess as any)));
@@ -64,7 +58,7 @@ export function createEngine(params: {
   if (!params || typeof params !== 'object' || !params.fen || !params.sanSeq) {
     // Return a dummy engine that never updates state
     return {
-      tryUserMove(_move: any) {
+      tryUserMove() {
         return { correct: false, snapback: true, fen: 'start' };
       },
       expectedMove() {

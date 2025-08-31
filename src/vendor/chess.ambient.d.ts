@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // Minimal chess.js surface we use.
 // This models the UMD global attached to window.
 declare global {

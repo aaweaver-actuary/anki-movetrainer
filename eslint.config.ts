@@ -1,30 +1,21 @@
 import js from '@eslint/js';
+import globals from 'globals';
 import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import prettier from 'eslint-config-prettier';
-import globals from 'globals';
 
 export default [
-  // Ignore build artifacts
   {
-    ignores: ['dist/**', 'lib/**', 'node_modules/**'],
+    ignores: ['dist/**', 'lib/**', 'node_modules/**', '**/*.d.ts'],
   },
-
-  // Base JS recommended rules
   js.configs.recommended,
-
-  // Provide browser globals (window, document, setTimeout, etc.)
   {
     languageOptions: {
-      globals: {
-        ...globals.browser,
-      },
+      globals: { ...globals.browser },
     },
   },
-
-  // TypeScript support
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.d.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -32,9 +23,7 @@ export default [
         sourceType: 'module',
       },
     },
-    plugins: {
-      '@typescript-eslint': tsPlugin,
-    },
+    plugins: { '@typescript-eslint': tsPlugin },
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'warn',
@@ -43,7 +32,5 @@ export default [
       '@typescript-eslint/explicit-function-return-type': 'off',
     },
   },
-
-  // Let Prettier handle formatting; turn off conflicting rules
   prettier,
 ];

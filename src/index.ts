@@ -4,10 +4,10 @@ import { createFeedback } from './feedback';
 import { createScheduler } from './scheduler';
 import { bundledPieceTheme } from './pieces';
 
-import type { Engine } from './types';
-import type { BoardHandle } from './types';
-import type { Feedback } from './types';
-import type { InitOptions } from './types';
+import type { Engine } from './types/engine';
+import type { BoardHandle } from './types/boardhandle';
+import type { Feedback } from './types/feedback';
+import type { InitOptions } from './types/initoptions';
 
 export function handleMove(
   engine: Engine,

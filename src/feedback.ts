@@ -3,7 +3,7 @@
  * Visuals: flash/arrow + progress + move list (numbers; future hidden)
  */
 
-import { Feedback } from './types.js';
+import { Feedback } from './types/feedback';
 
 export function createFeedback(root: HTMLElement): Feedback {
   const wrap = root.querySelector('#board-wrap') as HTMLElement | null;

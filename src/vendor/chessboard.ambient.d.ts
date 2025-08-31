@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // Minimal chessboard.js surface we use (UMD global)
 declare global {
   interface ChessboardHandle {
-    position(fenOrStart: string): void;
+    position(_fenOrStart: string): void;
   }
 
   interface ChessboardConfig {
@@ -11,13 +12,13 @@ declare global {
     moveSpeed?: number;
     snapbackSpeed?: number;
     trashSpeed?: number;
-    onDrop?: (source: string, target: string) => 'snapback' | void;
+    onDrop?: (_source: string, _target: string) => 'snapback' | void;
     onSnapEnd?: () => void;
   }
 
   function Chessboard(
-    el: HTMLElement | string,
-    config?: ChessboardConfig,
+    _el: HTMLElement | string,
+    _config?: ChessboardConfig,
   ): ChessboardHandle;
 }
 

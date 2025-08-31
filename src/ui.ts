@@ -3,7 +3,7 @@
  * Thin wrapper for chessboard.js mounting and event binding.
  */
 
-import { BoardHandle } from './types';
+import { BoardHandle } from './types/boardhandle';
 
 declare global {
   interface Window {
@@ -13,12 +13,7 @@ declare global {
 
 export function mountBoard(
   boardEl: HTMLElement,
-  opts: {
-    fen: string;
-    pieceTheme?: string | ((name: string) => string);
-    speeds?: { move?: number; snapback?: number; trash?: number };
-    onDrop: (source: string, target: string) => 'snapback' | void;
-  },
+  opts: import('./types/ui').MountBoardOptions,
 ): BoardHandle {
   if (!boardEl || !(boardEl instanceof HTMLElement)) {
     throw new Error('boardEl is required and must be an HTMLElement');

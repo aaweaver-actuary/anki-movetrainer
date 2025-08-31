@@ -9,7 +9,7 @@ test:
 	npx vitest run --coverage
 
 lint:
-	npm run lint
+	npx eslint "src/**/*.{ts,tsx,d.ts}"
 
 typecheck:
 	npm run check
